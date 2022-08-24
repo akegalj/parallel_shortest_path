@@ -1,8 +1,11 @@
-{-# LANGUAGE BangPatterns    #-}
-{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE OverloadedLists   #-}
+{-# LANGUAGE OverloadedStrings #-}
 import           Control.Parallel.Strategies
 import           Data.IntSet                 (IntSet, size, union, unions, (\\))
 import           Data.Sequence               (Seq (..), (|>))
+import qualified Data.Text                   as T
+import qualified Data.Text.IO                as T
 import           Data.Vector                 (Vector, (!))
 import           GHC.Exts                    (fromList, toList)
 
@@ -11,8 +14,8 @@ type Graph = Vector IntSet
 type Queue = Seq IntSet
 type Visited = IntSet
 
-parse :: String -> Graph
-parse = fromList . parallel . map (fromList . toNodes . words) . lines
+parse :: T.Text -> Graph
+parse = fromList . map (fromList . toNodes . T.split (==' ')) . T.lines
   where
     toNodes = map fst . filter ((=="1") . snd) . zip [0..]
 
@@ -25,7 +28,7 @@ distanceNode n gf = go [[n]] [n] 1 0
     neighbours = unions . map (gf!) . toList
 
     go :: Queue -> Visited -> Int -> Int -> Int
-    go Empty      _  !step !res = res
+    go Empty      _  _     !res = res
     go (x :<| xs) vs !step !res = let next = neighbours x \\ vs
                                   in go (append xs next) (union vs next) (step + 1) $ res + step*(size next)
 
@@ -34,4 +37,4 @@ distance g = sum . parallel . zipWith distanceNode [0..] $ replicate (length g) 
 
 parallel = withStrategy (parList rpar)
 
-main = getContents >>= print . distance . parse
+main = T.getContents >>= print . distance . parse

@@ -33,5 +33,6 @@ executable parallel-shortest-path
                     , containers
                     , vector
                     , parallel
+                    , text
     hs-source-dirs:   app
     default-language: Haskell2010
