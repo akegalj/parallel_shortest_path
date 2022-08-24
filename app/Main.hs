@@ -2,10 +2,9 @@
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
 import           Control.Parallel.Strategies
+import qualified Data.ByteString             as B
 import           Data.IntSet                 (IntSet, size, union, unions, (\\))
 import           Data.Sequence               (Seq (..), (|>))
-import qualified Data.Text                   as T
-import qualified Data.Text.IO                as T
 import           Data.Vector                 (Vector, (!))
 import           GHC.Exts                    (fromList, toList)
 
@@ -14,10 +13,12 @@ type Graph = Vector IntSet
 type Queue = Seq IntSet
 type Visited = IntSet
 
-parse :: T.Text -> Graph
-parse = fromList . map (fromList . toNodes . T.split (==' ')) . T.lines
+parse :: B.ByteString -> Graph
+parse = fromList . map (fromList . toNodes . words) . lines
   where
     toNodes = map fst . filter ((=="1") . snd) . zip [0..]
+    lines = B.split 10
+    words = B.split 32
 
 distanceNode :: Node -> Graph -> Int
 distanceNode n gf = go [[n]] [n] 1 0
@@ -37,4 +38,4 @@ distance g = sum . parallel . zipWith distanceNode [0..] $ replicate (length g) 
 
 parallel = withStrategy (parList rpar)
 
-main = T.getContents >>= print . distance . parse
+main = B.getContents >>= print . distance . parse

@@ -3,4 +3,4 @@ packages: parallel-shortest-path.cabal
 optimization: 2
 
 package parallel-shortest-path
-  ghc-options: -threaded -rtsopts "-with-rtsopts=-N"
+  ghc-options: -threaded -rtsopts "-with-rtsopts=-N" -funfolding-use-threshold=16 -optc-O3
