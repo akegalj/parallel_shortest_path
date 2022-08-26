@@ -38,20 +38,8 @@ neighbours (Graph adjs offs lens) n' = GV.unsafeSlice (fromIntegral $ offs `GV.u
   where
     n = fromIntegral n'
 
--- parse :: T.Text -> Graph
--- parse = toGraph . map (toNodes . words) . lines
---   where
---     toNodes = map fst . filter ((=="1") . snd) . zip [0..]
---     lines = T.lines
---     words = T.words
---     toGraph :: [[Node]] -> Graph
---     toGraph xs = let a = GV.fromList $ concat xs
---                      b = GV.prescanl' (\ac i -> ac + fromIntegral i) 0 c
---                      c = GV.fromList $ map (fromIntegral . length) xs
---                  in Graph a b c
-
-parse2 :: B.ByteString -> Graph
-parse2 bs = runST $ do
+parse :: B.ByteString -> Graph
+parse bs = runST $ do
     let nc = fromIntegral nodeCount
     adjsInit <- MV.unsafeNew $ nc*nc
     offsInit <- MV.unsafeNew nc
@@ -126,4 +114,4 @@ distanceNode n gf = runST $ do
 distance :: Graph -> Word32
 distance g = sum . withStrategy (parList rpar) . zipWith distanceNode [0..] $ replicate (GV.length $ offs g) g
 
-main = B.getContents >>= print . distance . parse2
+main = B.getContents >>= print . distance . parse
