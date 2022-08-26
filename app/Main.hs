@@ -3,39 +3,127 @@
 {-# LANGUAGE OverloadedStrings #-}
 import           Control.Parallel.Strategies
 import qualified Data.ByteString             as B
-import           Data.IntSet                 (IntSet, size, union, unions, (\\))
 import           Data.Sequence               (Seq (..), (|>))
-import           Data.Vector                 (Vector, (!))
+import qualified Data.Vector                 as V
+import qualified Data.Vector.Generic         as GV
+import qualified Data.Vector.Unboxed         as UV
+import qualified Data.Vector.Unboxed.Mutable as MV
 import           GHC.Exts                    (fromList, toList)
 
-type Node = Int
-type Graph = Vector IntSet
-type Queue = Seq IntSet
-type Visited = IntSet
+import           Control.Monad.ST
+import           Data.Word
 
-parse :: B.ByteString -> Graph
-parse = fromList . map (fromList . toNodes . words) . lines
+type Node = Word16
+data Graph = Graph
+    { adjs :: {-# UNPACK #-} !(UV.Vector Node)
+    , offs :: {-# UNPACK #-} !(UV.Vector Word32)
+    , lens :: {-# UNPACK #-} !(UV.Vector Word16)
+    }
+
+data MGraph s = MGraph
+    { _adjs   :: {-# UNPACK #-} !(MV.MVector s Node)
+    , _offs   :: {-# UNPACK #-} !(MV.MVector s Word32)
+    , _lens   :: {-# UNPACK #-} !(MV.MVector s Word16)
+    , adjsInd :: {-# UNPACK #-} !Int
+    }
+
+type Row = Int
+type Col = Node
+
+type Queue = Seq Node
+type Distances s = MV.MVector s Word16
+
+neighbours :: Graph -> Node -> UV.Vector Node
+neighbours (Graph adjs offs lens) n' = GV.unsafeSlice (fromIntegral $ offs `GV.unsafeIndex` n) (fromIntegral $ lens `GV.unsafeIndex` n) adjs
   where
-    toNodes = map fst . filter ((=="1") . snd) . zip [0..]
-    lines = B.split 10
-    words = B.split 32
+    n = fromIntegral n'
 
-distanceNode :: Node -> Graph -> Int
-distanceNode n gf = go [[n]] [n] 1 0
+-- parse :: T.Text -> Graph
+-- parse = toGraph . map (toNodes . words) . lines
+--   where
+--     toNodes = map fst . filter ((=="1") . snd) . zip [0..]
+--     lines = T.lines
+--     words = T.words
+--     toGraph :: [[Node]] -> Graph
+--     toGraph xs = let a = GV.fromList $ concat xs
+--                      b = GV.prescanl' (\ac i -> ac + fromIntegral i) 0 c
+--                      c = GV.fromList $ map (fromIntegral . length) xs
+--                  in Graph a b c
+
+parse2 :: B.ByteString -> Graph
+parse2 bs = runST $ do
+    let nc = fromIntegral nodeCount
+    adjsInit <- MV.unsafeNew $ nc*nc
+    offsInit <- MV.unsafeNew nc
+    lensInit <- MV.unsafeNew nc
+    let gf = MGraph adjsInit offsInit lensInit 0
+
+    gf2 <- parseFile gf 0
+
+    adjsFin <- GV.unsafeFreeze $ _adjs gf2
+    offsFin <- GV.unsafeFreeze $ _offs gf2
+    lensFin <- GV.unsafeFreeze $ _lens gf2
+
+    pure $ sliceAdjs $ Graph adjsFin offsFin lensFin
+
   where
-    append a [] = a
-    append a b  = a |> b
+    sliceAdjs gf = gf { adjs = GV.unsafeSlice 0 (GV.foldl' (\ac i -> ac + fromIntegral i) 0 $ lens gf) $ adjs gf }
+    bsLen = B.length bs
+    nodeCount = truncate . sqrt $ (fromIntegral bsLen + 1) / 2
+    lineLen = fromIntegral $ nodeCount*2
 
-    neighbours = unions . map (gf!) . toList
+    parseLine :: MGraph s -> Row -> Col -> Node -> Int -> ST s (MGraph s)
+    parseLine gf !row !col !count !ind
+        | col == nodeCount = do
+            if row == 0
+                then MV.unsafeWrite (_offs gf) row 0
+                else do
+                    let prevRow = row - 1
+                    old <- MV.unsafeRead (_offs gf) prevRow
+                    oldCount <- MV.unsafeRead (_lens gf) prevRow
+                    MV.unsafeWrite (_offs gf) row (old + fromIntegral oldCount)
+            MV.unsafeWrite (_lens gf) row count
+            pure gf
+        | otherwise = do
+                let c = B.index bs ind
+                if c == 49 -- '1'
+                    then do
+                        let newCount = count + 1
+                        MV.unsafeWrite (_adjs gf) (adjsInd gf) col
+                        parseLine (gf { adjsInd = adjsInd gf + 1 }) row (col + 1) newCount (ind + 2)
+                    else parseLine gf row (col + 1) count (ind + 2)
 
-    go :: Queue -> Visited -> Int -> Int -> Int
-    go Empty      _  _     !res = res
-    go (x :<| xs) vs !step !res = let next = neighbours x \\ vs
-                                  in go (append xs next) (union vs next) (step + 1) $ res + step*(size next)
+    parseFile :: MGraph s -> Row -> ST s (MGraph s)
+    parseFile gf !row
+        | row == fromIntegral nodeCount = pure gf
+        | otherwise = do
+                gf2 <- parseLine gf row 0 0 $ row * lineLen
+                parseFile gf2 (row + 1)
 
-distance :: Graph -> Int
-distance g = sum . parallel . zipWith distanceNode [0..] $ replicate (length g) g
+distanceNode :: Node -> Graph -> Word32
+distanceNode n gf = runST $ do
+    d <- MV.replicate l 0
+    go [n] d
+    MV.foldl' (\acc i -> acc + fromIntegral i) 0 d
+  where
+    l = GV.length $ offs gf
 
-parallel = withStrategy (parList rpar)
+    go :: Queue -> Distances s -> ST s ()
+    go Empty      _    = pure ()
+    go (x :<| xs) dist = do
+        step <- (+1) <$> MV.unsafeRead dist (fromIntegral x)
+        next <- GV.foldM' (\xs' i' -> do
+            let i = fromIntegral i'
+            s <- MV.unsafeRead dist i
+            if s == 0
+                then do
+                    MV.unsafeWrite dist i step
+                    pure $ xs' |> i'
+                else pure xs'
+            ) xs $ neighbours gf x
+        go next dist
 
-main = B.getContents >>= print . distance . parse
+distance :: Graph -> Word32
+distance g = sum . withStrategy (parList rpar) . zipWith distanceNode [0..] $ replicate (GV.length $ offs g) g
+
+main = B.getContents >>= print . distance . parse2
