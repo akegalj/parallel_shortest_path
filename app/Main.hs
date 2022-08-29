@@ -1,6 +1,9 @@
 {-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedLists   #-}
 {-# LANGUAGE OverloadedStrings #-}
+
+module Main (main) where
+
 import           Control.Parallel.Strategies
 import qualified Data.ByteString             as B
 import           Data.Sequence               (Seq (..), (|>))
@@ -91,13 +94,12 @@ parse bs = runST $ do
 distanceNode :: Node -> Graph -> Word32
 distanceNode n gf = runST $ do
     d <- MV.replicate l 0
-    go [n] d
+    UV.foldM' (\q _ -> go q d) [n] $ UV.enumFromTo 1 l
     MV.foldl' (\acc i -> acc + fromIntegral i) 0 d
   where
     l = GV.length $ offs gf
 
-    go :: Queue -> Distances s -> ST s ()
-    go Empty      _    = pure ()
+    go :: Queue -> Distances s -> ST s Queue
     go (x :<| xs) dist = do
         step <- (+1) <$> MV.unsafeRead dist (fromIntegral x)
         next <- GV.foldM' (\xs' i' -> do
@@ -109,7 +111,7 @@ distanceNode n gf = runST $ do
                     pure $ xs' |> i'
                 else pure xs'
             ) xs $ neighbours gf x
-        go next dist
+        pure next
 
 distance :: Graph -> Word32
 distance g = sum . withStrategy (parList rpar) . zipWith distanceNode [0..] $ replicate (GV.length $ offs g) g
