@@ -34,5 +34,6 @@ executable parallel-shortest-path
                     , vector
                     , parallel
                     , bytestring
+                    , compact
     hs-source-dirs:   app
     default-language: Haskell2010

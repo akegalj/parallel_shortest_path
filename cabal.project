@@ -2,8 +2,15 @@ packages: parallel-shortest-path.cabal
 
 optimization: 2
 
+source-repository-package
+  type: git
+  location: https://github.com/ezyang/compact.git
+  tag: 1e80459
+
 package parallel-shortest-path
-  ghc-options: -threaded -rtsopts "-with-rtsopts=-N" -funfolding-use-threshold=16 -optc-O3 -fllvm
+  ghc-options: -threaded -rtsopts "-with-rtsopts=-N -sstderr" -funfolding-use-threshold=16 -optc-O3
+
+-- -fllvm
 
 -- -eventlog -ddump-simpl 
 --  -sstderr -h -ls

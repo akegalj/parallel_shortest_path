@@ -12,6 +12,7 @@ import qualified Data.Vector.Generic         as GV
 import qualified Data.Vector.Unboxed         as UV
 import qualified Data.Vector.Unboxed.Mutable as MV
 import           GHC.Exts                    (fromList, toList)
+import           Data.Compact
 
 import           Control.Monad.ST
 import           Data.Word
@@ -116,4 +117,4 @@ distanceNode n gf = runST $ do
 distance :: Graph -> Word32
 distance g = sum . withStrategy (parList rpar) . zipWith distanceNode [0..] $ replicate (GV.length $ offs g) g
 
-main = B.getContents >>= print . distance . parse
+main = B.getContents >>= compact . parse >>= print . distance . getCompact
